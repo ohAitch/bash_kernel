@@ -166,7 +166,9 @@ class BashKernel(Kernel):
             # output.  Also note that the return value from
             # run_command is not needed, because the output was
             # already sent by IREPLWrapper.
-            self.bashwrapper.run_command(code.rstrip(), timeout=None)
+            "Except actually just return hello world"
+            self.bashwrapper.line_output_callback(u"hello world") #UGH
+            # self.bashwrapper.run_command(code.rstrip(), timeout=None)
         except KeyboardInterrupt:
             self.bashwrapper.child.sendintr()
             interrupted = True

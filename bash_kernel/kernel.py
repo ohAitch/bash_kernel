@@ -1,6 +1,7 @@
 from ipykernel.kernelbase import Kernel
 from pexpect import replwrap, EOF
 import pexpect
+import requests
 
 from subprocess import check_output
 import os.path
@@ -166,8 +167,10 @@ class BashKernel(Kernel):
             # output.  Also note that the return value from
             # run_command is not needed, because the output was
             # already sent by IREPLWrapper.
-            "Except actually just return hello world"
-            self.bashwrapper.line_output_callback(u"hello world") #UGH
+            "Except instead call API"
+            API_URL = 'http://localhost:3000/'
+            api_result = requests.get(API_URL, params={'exec':code.rstrip()})
+            self.bashwrapper.line_output_callback(api_result.text) #UGH
             # self.bashwrapper.run_command(code.rstrip(), timeout=None)
         except KeyboardInterrupt:
             self.bashwrapper.child.sendintr()

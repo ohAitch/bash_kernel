@@ -1,7 +1,8 @@
 from ipykernel.kernelbase import Kernel
 from pexpect import replwrap, EOF
+
 import pexpect
-import requests
+import anthropic
 
 from subprocess import check_output
 import os.path
@@ -168,9 +169,19 @@ class BashKernel(Kernel):
             # run_command is not needed, because the output was
             # already sent by IREPLWrapper.
             "Except instead call API"
-            API_URL = 'http://localhost:3000/'
-            api_result = requests.get(API_URL, params={'exec':code.rstrip()})
-            self.bashwrapper.line_output_callback(api_result.text) #UGH
+
+            client = anthropic.Client(os.environ["ANTHROPIC_API_KEY"])
+            max_tokens_to_sample = 200 #TODO configure
+            result = client.completion(
+                prompt=f"{anthropic.HUMAN_PROMPT} {code.rstrip()}{anthropic.AI_PROMPT}",
+                stop_sequences=[anthropic.HUMAN_PROMPT],
+                model="claude-instant-v1",
+                max_tokens_to_sample=max_tokens_to_sample,
+            )
+            if result['exception']:
+                #TODO I think these are all handled to more specific errors by the client, but just in case
+                raise Exception(result['exception']) 
+            self.bashwrapper.line_output_callback(result['completion']) #UGH
             # self.bashwrapper.run_command(code.rstrip(), timeout=None)
         except KeyboardInterrupt:
             self.bashwrapper.child.sendintr()

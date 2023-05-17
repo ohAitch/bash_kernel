@@ -1,1 +1,1 @@
-bash_kernel
+prosaic_kernel

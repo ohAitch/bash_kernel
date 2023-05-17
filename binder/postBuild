@@ -2,5 +2,5 @@
 
 set -ex
 
-# Install the bash kernel
-python -m bash_kernel.install
+# Install the kernel
+python -m prosaic_kernel.install

@@ -19,7 +19,7 @@ from .display import (extract_contents, build_cmds)
 
 class IREPLWrapper(replwrap.REPLWrapper):
     """A subclass of REPLWrapper that gives incremental output
-    specifically for bash_kernel.
+    specifically for prosaic_kernel.
 
     The parameters are the same as for REPLWrapper, except for one
     extra parameter:
@@ -58,8 +58,8 @@ class IREPLWrapper(replwrap.REPLWrapper):
         # Prompt received, so return normally
         return pos
 
-class BashKernel(Kernel):
-    implementation = 'bash_kernel'
+class ProsaicKernel(Kernel):
+    implementation = 'prosaic_kernel'
     implementation_version = __version__
 
     @property
@@ -72,10 +72,10 @@ class BashKernel(Kernel):
     @property
     def banner(self):
         if self._banner is None:
-            self._banner = check_output(['bash', '--version']).decode('utf-8')
+            self._banner = "v0" # check_output(['bash', '--version']).decode('utf-8')
         return self._banner
 
-    language_info = {'name': 'bash',
+    language_info = {'name': 'prosaic',
                      'codemirror_mode': 'shell',
                      'mimetype': 'text/x-sh',
                      'file_extension': '.sh'}
@@ -86,6 +86,8 @@ class BashKernel(Kernel):
         self._known_display_ids = set()
 
     def _start_bash(self):
+        #XXX we really don't need… parts of this. which parts tbd.
+
         # Signal handlers are inherited by forked processes, and we can't easily
         # reset it from the subprocess. Since kernelapp ignores SIGINT except in
         # message handlers, we need to temporarily reset the SIGINT handler here
@@ -180,6 +182,7 @@ class BashKernel(Kernel):
             )
             if result['exception']:
                 #TODO I think these are all handled to more specific errors by the client, but just in case
+                #TODO and anyway we should catch them and  self.send_response(self.iopub_socket, 'error', error_content)
                 raise Exception(result['exception']) 
             self.bashwrapper.line_output_callback(result['completion']) #UGH
             # self.bashwrapper.run_command(code.rstrip(), timeout=None)
@@ -197,10 +200,11 @@ class BashKernel(Kernel):
         if interrupted:
             return {'status': 'abort', 'execution_count': self.execution_count}
 
-        try:
-            exitcode = int(self.bashwrapper.run_command('echo $?').rstrip())
-        except Exception:
-            exitcode = 1
+        exitcode = 0
+        # try:
+        #     exitcode = int(self.bashwrapper.run_command('echo $?').rstrip())
+        # except Exception:
+        #     exitcode = 1
 
         if exitcode:
             error_content = {
@@ -223,34 +227,38 @@ class BashKernel(Kernel):
                    'cursor_end': cursor_pos, 'metadata': dict(),
                    'status': 'ok'}
 
-        if not code or code[-1] == ' ':
-            return default
+        #There are some interesting things that could be done here with prompt suggestion
+        # but right now, no
+        return default
+        
+        # if not code or code[-1] == ' ':
+        #     return default
 
-        tokens = code.replace(';', ' ').split()
-        if not tokens:
-            return default
+        # tokens = code.replace(';', ' ').split()
+        # if not tokens:
+        #     return default
 
-        matches = []
-        token = tokens[-1]
-        start = cursor_pos - len(token)
+        # matches = []
+        # token = tokens[-1]
+        # start = cursor_pos - len(token)
 
-        if token[0] == '$':
-            # complete variables
-            cmd = 'compgen -A arrayvar -A export -A variable %s' % token[1:] # strip leading $
-            output = self.bashwrapper.run_command(cmd).rstrip()
-            completions = set(output.split())
-            # append matches including leading $
-            matches.extend(['$'+c for c in completions])
-        else:
-            # complete functions and builtins
-            cmd = 'compgen -cdfa %s' % token
-            output = self.bashwrapper.run_command(cmd).rstrip()
-            matches.extend(output.split())
+        # if token[0] == '$':
+        #     # complete variables
+        #     cmd = 'compgen -A arrayvar -A export -A variable %s' % token[1:] # strip leading $
+        #     output = self.bashwrapper.run_command(cmd).rstrip()
+        #     completions = set(output.split())
+        #     # append matches including leading $
+        #     matches.extend(['$'+c for c in completions])
+        # else:
+        #     # complete functions and builtins
+        #     cmd = 'compgen -cdfa %s' % token
+        #     output = self.bashwrapper.run_command(cmd).rstrip()
+        #     matches.extend(output.split())
 
-        if not matches:
-            return default
-        matches = [m for m in matches if m.startswith(token)]
+        # if not matches:
+        #     return default
+        # matches = [m for m in matches if m.startswith(token)]
 
-        return {'matches': sorted(matches), 'cursor_start': start,
-                'cursor_end': cursor_pos, 'metadata': dict(),
-                'status': 'ok'}
+        # return {'matches': sorted(matches), 'cursor_start': start,
+        #         'cursor_end': cursor_pos, 'metadata': dict(),
+        #         'status': 'ok'}

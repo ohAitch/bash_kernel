@@ -1,3 +1,3 @@
-"""A bash kernel for Jupyter"""
+"""Prosaic kernel for Jupyter"""
 
 from .kernel import __version__

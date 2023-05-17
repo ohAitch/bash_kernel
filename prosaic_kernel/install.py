@@ -66,9 +66,9 @@ def main(argv=None):
     install_my_kernel_spec(user=user, prefix=prefix)
 
 if __name__ == '__main__':
-    if "ANTHROPIC_API_KEY" not in os.environ:
+    if not os.environ.get("ANTHROPIC_API_KEY"):
         #TODO support %env and other magics, so this could also be loaded at runtime
-        print("ANTHROPIC_API_KEY not set. Please set it to your API key.")
+        print("ANTHROPIC_API_KEY unset or blank. Please set it to your API key.")
         sys.exit(1)
     kernel_json["env"]["ANTHROPIC_API_KEY"] = os.environ["ANTHROPIC_API_KEY"]
     main()

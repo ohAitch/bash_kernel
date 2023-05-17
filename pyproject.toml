@@ -7,7 +7,7 @@ name = "prosaic_kernel"
 authors = [
     {name = "Thomas Kluyver", email = "thomas@kluyver.me.uk"},
 ]
-readme = "README.rst"
+readme = "README.md"
 dependencies = ["pexpect (>=4.0)", "ipykernel", "anthropic"]
 classifiers = [
     "Framework :: Jupyter",

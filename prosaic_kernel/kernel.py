@@ -95,6 +95,8 @@ class ProsaicKernel(Kernel):
                 match code.splitlines()[0]:
                     case "!log":
                         self.process_output("\n".join(self.chat_log))
+                        if len(code.splitlines()[1:]):
+                            raise Exception("!log takes no input")
                         return default
                     case "!reset":
                         self.chat_log = []

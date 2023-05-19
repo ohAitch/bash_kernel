@@ -84,6 +84,7 @@ class ProsaicKernel(Kernel):
         Kernel.__init__(self, **kwargs)
         self._start_bash()
         self._known_display_ids = set()
+        self.chat_log = []
 
     def _start_bash(self):
         #XXX we really don't need… parts of this. which parts tbd.
@@ -173,17 +174,19 @@ class ProsaicKernel(Kernel):
             "Except instead call API"
 
             client = anthropic.Client(os.environ["ANTHROPIC_API_KEY"])
-            max_tokens_to_sample = 200 #TODO configure
+            max_tokens_to_sample = 200 #TODO configure max_tokens model etc
+            prompt_entry = f"{anthropic.HUMAN_PROMPT} {code.strip()}{anthropic.AI_PROMPT}"
+            prompt = "\n".join(self.chat_log + [prompt_entry])
             result = client.completion(
-                prompt=f"{anthropic.HUMAN_PROMPT} {code.rstrip()}{anthropic.AI_PROMPT}",
+                prompt=prompt, max_tokens_to_sample=max_tokens_to_sample,
                 stop_sequences=[anthropic.HUMAN_PROMPT],
                 model="claude-instant-v1",
-                max_tokens_to_sample=max_tokens_to_sample,
             )
             if result['exception']:
                 #TODO I think these are all handled to more specific errors by the client, but just in case
                 #TODO and anyway we should catch them and  self.send_response(self.iopub_socket, 'error', error_content)
                 raise Exception(result['exception']) 
+            self.chat_log.append(prompt_entry + result['completion'])
             self.bashwrapper.line_output_callback(result['completion']) #UGH
             # self.bashwrapper.run_command(code.rstrip(), timeout=None)
         except KeyboardInterrupt:

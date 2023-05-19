@@ -94,14 +94,21 @@ class ProsaicKernel(Kernel):
             max_tokens_to_sample = 500 #TODO configure max_tokens model etc
             prompt_entry = f"{anthropic.HUMAN_PROMPT} {code.strip()}{anthropic.AI_PROMPT}"
             prompt = "\n".join(self.chat_log + [prompt_entry])
-            result = client.completion(
+            stream = client.completion_stream(
                 prompt=prompt, max_tokens_to_sample=max_tokens_to_sample,
                 stop_sequences=[anthropic.HUMAN_PROMPT],
                 model="claude-instant-v1",
             )
-            #TODO respect store_history flag
-            self.chat_log.append(prompt_entry + result['completion'])
-            self.process_output(result['completion'])
+            completion = None
+            for message in stream:
+                stdout_text = {'name': 'stdout', 'text': message['completion']}
+                self.send_response(self.iopub_socket, 'clear_output', {'wait': True})
+                self.send_response(self.iopub_socket, 'stream', stdout_text)
+                completion = message['completion']
+            if store_history and completion is not None:
+                self.chat_log.append(prompt_entry + completion)
+            #MAYFIX handle images html etc
+            #self.process_output(result['completion'])
         except KeyboardInterrupt:
             return {'status': 'abort', 'execution_count': self.execution_count}
         except anthropic.ApiException as error:

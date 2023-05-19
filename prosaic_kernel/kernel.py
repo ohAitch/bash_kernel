@@ -76,9 +76,9 @@ class ProsaicKernel(Kernel):
         return self._banner
 
     language_info = {'name': 'prosaic',
-                     'codemirror_mode': 'shell',
-                     'mimetype': 'text/x-sh',
-                     'file_extension': '.sh'}
+                     'codemirror_mode': 'markdown',
+                     'mimetype': 'text/x-markdown-prompt',
+                     'file_extension': '.md'}
 
     def __init__(self, **kwargs):
         Kernel.__init__(self, **kwargs)

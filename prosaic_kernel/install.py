@@ -9,7 +9,7 @@ from IPython.utils.tempdir import TemporaryDirectory
 kernel_json = {"argv":[sys.executable,"-m","prosaic_kernel", "-f", "{connection_file}"],
  "display_name":"prosaic",
  "language":"prosaic",
- "codemirror_mode":"shell",
+ "codemirror_mode":"markdown",
  "env":{"PS1": "$"}
 }
 

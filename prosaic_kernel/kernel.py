@@ -174,7 +174,7 @@ class ProsaicKernel(Kernel):
             "Except instead call API"
 
             client = anthropic.Client(os.environ["ANTHROPIC_API_KEY"])
-            max_tokens_to_sample = 200 #TODO configure max_tokens model etc
+            max_tokens_to_sample = 500 #TODO configure max_tokens model etc
             prompt_entry = f"{anthropic.HUMAN_PROMPT} {code.strip()}{anthropic.AI_PROMPT}"
             prompt = "\n".join(self.chat_log + [prompt_entry])
             result = client.completion(

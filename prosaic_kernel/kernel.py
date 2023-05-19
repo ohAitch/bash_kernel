@@ -85,11 +85,27 @@ class ProsaicKernel(Kernel):
     def do_execute(self, code, silent, store_history=True,
                    user_expressions=None, allow_stdin=False):
         self.silent = silent
-        if not code.strip():
-            return {'status': 'ok', 'execution_count': self.execution_count,
+        default = {'status': 'ok', 'execution_count': self.execution_count,
                     'payload': [], 'user_expressions': {}}
+        if not code.strip():
+            return default
 
         try:
+            if code[0] == '!':
+                match code.splitlines()[0]:
+                    case "!log":
+                        self.process_output("\n".join(self.chat_log))
+                        return default
+                    case "!reset":
+                        self.chat_log = []
+                        if len(code.splitlines()[1:]):
+                            prompt = "\n\n" + "\n".join(code.splitlines()[1:]).strip()
+                            self.chat_log.append(prompt)
+                        self.process_output("Reset!")
+                        return default
+                    case _:
+                        raise Exception(f"Unknown command {code.splitlines()[0]}")
+
             client = anthropic.Client(os.environ["ANTHROPIC_API_KEY"])
             max_tokens_to_sample = 500 #TODO configure max_tokens model etc
             prompt_entry = f"{anthropic.HUMAN_PROMPT} {code.strip()}{anthropic.AI_PROMPT}"
@@ -111,7 +127,7 @@ class ProsaicKernel(Kernel):
             #self.process_output(result['completion'])
         except KeyboardInterrupt:
             return {'status': 'abort', 'execution_count': self.execution_count}
-        except anthropic.ApiException as error:
+        except Exception as error:
             self.process_output(error)
             error_content = {
                 'ename': '',

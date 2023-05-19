@@ -4,3 +4,4 @@ build/
 dist/
 MANIFEST
 .anthropic_key
+.ipynb_checkpoints/

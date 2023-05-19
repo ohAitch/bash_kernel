@@ -62,33 +62,6 @@ _TEXT_SAVED_IMAGE = "bash_kernel: saved image data to: "
 _TEXT_SAVED_HTML = "bash_kernel: saved html data to: "
 _TEXT_SAVED_JAVASCRIPT = "bash_kernel: saved javascript data to: "
 
-def _build_cmd_for_type(display_cmd, line_prefix):
-    return """
-%s () {
-    display_id="$1"; shift;
-    TMPFILE=$(mktemp ${TMPDIR-/tmp}/bash_kernel.XXXXXXXXXX)
-    cat > $TMPFILE
-    prefix="%s"
-    if [[ "${display_id}" != "" ]]; then
-        echo "${prefix}(${display_id}) $TMPFILE" >&2
-    else
-        echo "${prefix}$TMPFILE" >&2
-    fi
-}
-""" % (display_cmd, line_prefix)
-
-
-def build_cmds():
-    commands = []
-    capabilities = []
-    for line_prefix, info in CONTENT_DATA_PREFIXES.items():
-        commands.append(_build_cmd_for_type(info['display_cmd'], line_prefix))
-        capabilities.append(info['capability'])
-    capabilities_cmd = 'export NOTEBOOK_BASH_KERNEL_CAPABILITIES="{}"'.format(','.join(capabilities))
-    commands.append(capabilities_cmd)
-    return "\n".join(commands)
-
-
 def _unlink_if_temporary(filename):
     tmp_dir = '/tmp'
     if 'TMPDIR' in os.environ:

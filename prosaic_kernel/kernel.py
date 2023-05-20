@@ -92,26 +92,7 @@ class ProsaicKernel(Kernel):
 
         try:
             if code[0] == '!' or code[0] == '<':
-                match code.splitlines()[0]:
-                    case "!log":
-                        self.process_output("\n".join(self.chat_log))
-                        if len(code.splitlines()[1:]):
-                            raise Exception("!log takes no input")
-                        return default
-                    case "!reset":
-                        self.chat_log = []
-                        if len(code.splitlines()[1:]):
-                            #TODO split on anthropic.HUMAN_PROMPT
-                            prompt = "\n\n" + "\n".join(code.splitlines()[1:]).strip()
-                            self.chat_log.append(prompt)
-                        lines = (self.chat_log or [""])[0].count('\n')
-                        self.process_output(f"Reset! Prompt is {lines} lines.")
-                        return default
-                    case "!nb" | "<!--":
-                        self.process_output("[Ignoring...]")
-                        return default
-                    case _:
-                        raise Exception(f"Unknown command {code.splitlines()[0]}")
+                return self._do_command(code)
 
             client = anthropic.Client(os.environ["ANTHROPIC_API_KEY"])
             max_tokens_to_sample = 500 #TODO configure max_tokens model etc
@@ -150,6 +131,31 @@ class ProsaicKernel(Kernel):
         return {'status': 'ok', 'execution_count': self.execution_count,
                 'payload': [], 'user_expressions': {}}
 
+    def _do_command(self,code):
+        status_ok = {'status': 'ok', 'execution_count': self.execution_count,
+                     'payload': [], 'user_expressions': {}}
+        
+        match code.splitlines()[0]:
+            case "!log":
+                self.process_output("\n".join(self.chat_log))
+                if len(code.splitlines()[1:]):
+                    raise Exception("!log takes no input")
+                return status_ok
+            case "!reset":
+                self.chat_log = []
+                if len(code.splitlines()[1:]):
+                    #TODO split on anthropic.HUMAN_PROMPT
+                    prompt = "\n\n" + "\n".join(code.splitlines()[1:]).strip()
+                    self.chat_log.append(prompt)
+                lines = (self.chat_log or [""])[0].count('\n')
+                self.process_output(f"Reset! Prompt is {lines} lines.")
+                return status_ok
+            case "!nb" | "<!--":
+                self.process_output("[Ignoring...]")
+                return status_ok
+            case _:
+                raise Exception(f"Unknown command {code.splitlines()[0]}")
+                
     def do_complete(self, code, cursor_pos):
         code = code[:cursor_pos]
         default = {'matches': [], 'cursor_start': 0,

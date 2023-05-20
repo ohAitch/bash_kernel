@@ -91,7 +91,7 @@ class ProsaicKernel(Kernel):
             return default
 
         try:
-            if code[0] == '!':
+            if code[0] == '!' or code[0] == '<':
                 match code.splitlines()[0]:
                     case "!log":
                         self.process_output("\n".join(self.chat_log))
@@ -101,9 +101,14 @@ class ProsaicKernel(Kernel):
                     case "!reset":
                         self.chat_log = []
                         if len(code.splitlines()[1:]):
+                            #TODO split on anthropic.HUMAN_PROMPT
                             prompt = "\n\n" + "\n".join(code.splitlines()[1:]).strip()
                             self.chat_log.append(prompt)
-                        self.process_output("Reset!")
+                        lines = (self.chat_log or [""])[0].count('\n')
+                        self.process_output(f"Reset! Prompt is {lines} lines.")
+                        return default
+                    case "!nb" | "<!--":
+                        self.process_output("[Ignoring...]")
                         return default
                     case _:
                         raise Exception(f"Unknown command {code.splitlines()[0]}")

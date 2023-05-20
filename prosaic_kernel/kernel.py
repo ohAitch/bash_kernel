@@ -79,7 +79,7 @@ class ProsaicKernel(Kernel):
         self._known_display_ids = set()
         self.chat_log = [""]
         self.prosaic_container = prosaic_container
-        self.exec_tool = None
+        self._exec_tool = None
 
     def process_output(self, output):
         if not self.silent:
@@ -132,6 +132,11 @@ class ProsaicKernel(Kernel):
         #MAYFIX handle images html etc
         #self.process_output(completion)
 
+    async def exec_tool(self, code):
+        if not self._exec_tool:
+            self._exec_tool = await make_tool_interface(self.prosaic_container)
+        return await self._exec_tool(code)
+
     async def do_execute(self, code, silent, store_history=True,
                    user_expressions=None, allow_stdin=False):
         self.silent = silent
@@ -140,18 +145,22 @@ class ProsaicKernel(Kernel):
                     'payload': [], 'user_expressions': {}}
 
         try:
-            if code[0] == '!' or code[0] == '<':
-                return self._do_command(code)
-
             if os.environ.get("PROSAIC_VALIDATION_MODE"):
-                if not self.exec_tool:
-                    self.exec_tool = await make_tool_interface(self.prosaic_container)
-
-                query = AnthropicQuery(EnvClient(), VALIDATION_PROMPT.format(CODE=code), raw=True)
-                if " Yes" == query.sync(model="claude-v1", max_tokens_to_sample=1):
+                if store_history:
+                     #TODO the mapping to self.execution_count could be less fragile
+                    self.chat_log.append(code.strip())
+                #TODO this is kind of like slack
+                if is_approval:= (code[:9] == "!approve "):
+                    code = self.chat_log[int(code[9:])]
+                
+                query = lambda: AnthropicQuery(EnvClient(), VALIDATION_PROMPT.format(CODE=code), raw=True)
+                if is_approval or " Yes" == query().sync(model="claude-v1", max_tokens_to_sample=1):
                     self.update_output(await self.exec_tool(code))
                 else:
-                    raise NotImplementedError("Unauthorized")
+                    self.update_output("[…waiting for approval]")
+
+            elif code[0] == '!' or code[0] == '<':
+                return self._do_command(code)
             else:
                 query = AnthropicQuery(EnvClient(), code.strip(), prefix="".join(self.chat_log))
                 for message in query.stream():

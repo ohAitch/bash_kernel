@@ -74,10 +74,12 @@ class ProsaicKernel(Kernel):
                      'mimetype': 'text/x-markdown-prompt',
                      'file_extension': '.md'}
 
-    def __init__(self, **kwargs):
+    def __init__(self, prosaic_container="STUB", **kwargs):
         Kernel.__init__(self, **kwargs)
         self._known_display_ids = set()
         self.chat_log = [""]
+        self.prosaic_container = prosaic_container
+        self.exec_tool = None
 
     def process_output(self, output):
         if not self.silent:
@@ -142,10 +144,14 @@ class ProsaicKernel(Kernel):
                 return self._do_command(code)
 
             if os.environ.get("PROSAIC_VALIDATION_MODE"):
+                if not self.exec_tool:
+                    self.exec_tool = await make_tool_interface(self.prosaic_container)
+
                 query = AnthropicQuery(EnvClient(), VALIDATION_PROMPT.format(CODE=code), raw=True)
-                self.update_output(
-                    query.sync(model="claude-v1", max_tokens_to_sample=1)
-                )
+                if " Yes" == query.sync(model="claude-v1", max_tokens_to_sample=1):
+                    self.update_output(await self.exec_tool(code))
+                else:
+                    raise NotImplementedError("Unauthorized")
             else:
                 query = AnthropicQuery(EnvClient(), code.strip(), prefix="".join(self.chat_log))
                 for message in query.stream():

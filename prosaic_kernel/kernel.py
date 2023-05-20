@@ -11,6 +11,34 @@ version_pat = re.compile(r'version (\d+(\.\d+)+)')
 
 from .display import extract_contents
 
+class EnvClient(anthropic.Client):
+    def __init__(self) -> None:
+        super().__init__(os.environ["ANTHROPIC_API_KEY"])
+
+class AnthropicQuery:
+    def __init__(self, client: anthropic.Client, query: str, prefix="") -> None:
+        self.client = client
+        self.query_prompt = f"{anthropic.HUMAN_PROMPT} {query}{anthropic.AI_PROMPT}"
+        self.answer = None
+        self.api_args = dict(
+            prompt = prefix + self.query_prompt,
+            stop_sequences=[anthropic.HUMAN_PROMPT],
+            max_tokens_to_sample=500,  #TODO configure max_tokens model etc
+            model="claude-instant-v1",
+        )
+    
+    def sync(self, **kwargs):
+        self.answer = self.client.completion(**self.api_args, **kwargs)['completion']
+        return self.answer
+
+    def stream(self, **kwargs):
+        for message in self.client.completion_stream(**self.api_args, **kwargs):
+            self.answer = message['completion']
+            yield self.answer
+    
+    def prompt_and_answer(self):
+        if self.answer is not None: return self.query_prompt + self.answer
+
 class ProsaicKernel(Kernel):
     implementation = 'prosaic_kernel'
     implementation_version = __version__
@@ -82,37 +110,29 @@ class ProsaicKernel(Kernel):
             self._known_display_ids.add(display_id)
         self.send_response(self.iopub_socket, msg_type, content)
 
-    def do_execute(self, code, silent, store_history=True,
+    def update_output(self, text):
+        stdout_text = {'name': 'stdout', 'text': text}
+        self.send_response(self.iopub_socket, 'clear_output', {'wait': True})
+        self.send_response(self.iopub_socket, 'stream', stdout_text)
+        #MAYFIX handle images html etc
+        #self.process_output(completion)
+
+    async def do_execute(self, code, silent, store_history=True,
                    user_expressions=None, allow_stdin=False):
         self.silent = silent
-        default = {'status': 'ok', 'execution_count': self.execution_count,
-                    'payload': [], 'user_expressions': {}}
         if not code.strip():
-            return default
+            return {'status': 'ok', 'execution_count': self.execution_count,
+                    'payload': [], 'user_expressions': {}}
 
         try:
             if code[0] == '!' or code[0] == '<':
                 return self._do_command(code)
 
-            client = anthropic.Client(os.environ["ANTHROPIC_API_KEY"])
-            max_tokens_to_sample = 500 #TODO configure max_tokens model etc
-            prompt_entry = f"{anthropic.HUMAN_PROMPT} {code.strip()}{anthropic.AI_PROMPT}"
-            prompt = "\n".join(self.chat_log + [prompt_entry])
-            stream = client.completion_stream(
-                prompt=prompt, max_tokens_to_sample=max_tokens_to_sample,
-                stop_sequences=[anthropic.HUMAN_PROMPT],
-                model="claude-instant-v1",
-            )
-            completion = None
-            for message in stream:
-                stdout_text = {'name': 'stdout', 'text': message['completion']}
-                self.send_response(self.iopub_socket, 'clear_output', {'wait': True})
-                self.send_response(self.iopub_socket, 'stream', stdout_text)
-                completion = message['completion']
-            if store_history and completion is not None:
-                self.chat_log.append(prompt_entry + completion)
-            #MAYFIX handle images html etc
-            #self.process_output(result['completion'])
+            query = AnthropicQuery(EnvClient(), code.strip(), prefix="".join(self.chat_log))
+            for message in query.stream():
+                self.update_output(message)
+            if store_history and query.prompt_and_answer():
+                self.chat_log.append(query.prompt_and_answer())
         except KeyboardInterrupt:
             return {'status': 'abort', 'execution_count': self.execution_count}
         except Exception as error:
@@ -137,7 +157,7 @@ class ProsaicKernel(Kernel):
         
         match code.splitlines()[0]:
             case "!log":
-                self.process_output("\n".join(self.chat_log))
+                self.process_output("".join(self.chat_log))
                 if len(code.splitlines()[1:]):
                     raise Exception("!log takes no input")
                 return status_ok

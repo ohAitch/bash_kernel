@@ -77,7 +77,7 @@ class ProsaicKernel(Kernel):
     def __init__(self, **kwargs):
         Kernel.__init__(self, **kwargs)
         self._known_display_ids = set()
-        self.chat_log = []
+        self.chat_log = [""]
 
     def process_output(self, output):
         if not self.silent:
@@ -181,12 +181,12 @@ class ProsaicKernel(Kernel):
                     raise Exception("!log takes no input")
                 return status_ok
             case "!reset":
-                self.chat_log = []
+                self.chat_log = [""]
                 if len(code.splitlines()[1:]):
                     #TODO split on anthropic.HUMAN_PROMPT
                     prompt = "\n\n" + "\n".join(code.splitlines()[1:]).strip()
-                    self.chat_log.append(prompt)
-                lines = (self.chat_log or [""])[0].count('\n')
+                    self.chat_log[0]=prompt
+                lines = self.chat_log[0].count('\n')
                 self.process_output(f"Reset! Prompt is {lines} lines.")
                 return status_ok
             case "!nb" | "<!--":

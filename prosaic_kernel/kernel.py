@@ -5,20 +5,33 @@ import anthropic
 import os
 import re
 
+from pathlib import Path
 __version__ = '0.0.1'
 
 version_pat = re.compile(r'version (\d+(\.\d+)+)')
 
 from .display import extract_contents
 
+#STUB
+async def make_tool_interface(_connection):
+    connection = _connection
+    async def tool(code):
+        return f"{connection}: ran {code}"
+    return tool
+
+VALIDATION_PROMPT = "\n\n" + (Path(__file__).parent / "validation_prompt.md").read_text().strip()
+
 class EnvClient(anthropic.Client):
     def __init__(self) -> None:
         super().__init__(os.environ["ANTHROPIC_API_KEY"])
 
 class AnthropicQuery:
-    def __init__(self, client: anthropic.Client, query: str, prefix="") -> None:
+    def __init__(self, client: anthropic.Client, query: str, prefix="", raw=False) -> None:
         self.client = client
-        self.query_prompt = f"{anthropic.HUMAN_PROMPT} {query}{anthropic.AI_PROMPT}"
+        if raw:
+            self.query_prompt = query
+        else:
+            self.query_prompt = f"{anthropic.HUMAN_PROMPT} {query}{anthropic.AI_PROMPT}"
         self.answer = None
         self.api_args = dict(
             prompt = prefix + self.query_prompt,
@@ -28,11 +41,11 @@ class AnthropicQuery:
         )
     
     def sync(self, **kwargs):
-        self.answer = self.client.completion(**self.api_args, **kwargs)['completion']
+        self.answer = self.client.completion(**{**self.api_args, **kwargs})['completion']
         return self.answer
 
     def stream(self, **kwargs):
-        for message in self.client.completion_stream(**self.api_args, **kwargs):
+        for message in self.client.completion_stream(**{**self.api_args, **kwargs}):
             self.answer = message['completion']
             yield self.answer
     
@@ -128,11 +141,17 @@ class ProsaicKernel(Kernel):
             if code[0] == '!' or code[0] == '<':
                 return self._do_command(code)
 
-            query = AnthropicQuery(EnvClient(), code.strip(), prefix="".join(self.chat_log))
-            for message in query.stream():
-                self.update_output(message)
-            if store_history and query.prompt_and_answer():
-                self.chat_log.append(query.prompt_and_answer())
+            if os.environ.get("PROSAIC_VALIDATION_MODE"):
+                query = AnthropicQuery(EnvClient(), VALIDATION_PROMPT.format(CODE=code), raw=True)
+                self.update_output(
+                    query.sync(model="claude-v1", max_tokens_to_sample=1)
+                )
+            else:
+                query = AnthropicQuery(EnvClient(), code.strip(), prefix="".join(self.chat_log))
+                for message in query.stream():
+                    self.update_output(message)
+                if store_history and query.prompt_and_answer():
+                    self.chat_log.append(query.prompt_and_answer())
         except KeyboardInterrupt:
             return {'status': 'abort', 'execution_count': self.execution_count}
         except Exception as error:

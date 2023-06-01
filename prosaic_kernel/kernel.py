@@ -137,6 +137,14 @@ class ProsaicKernel(Kernel):
             self._exec_tool = await make_tool_interface(self.prosaic_container)
         return await self._exec_tool(code)
 
+    def approve_interactively(self, code):
+        #TODO really this should go in kernel.js
+        self.send_response(self.iopub_socket, 'display_data', content_for_js('''
+            console.warn("TODO inject fancy approve/reject <form>")
+        '''))
+        #TODO display the code in question in isolation
+        return "y" == self.raw_input("Approve execution? [Y/n] ").strip().lower()[0]
+                    
     async def do_execute(self, code, silent, store_history=True,
                    user_expressions=None, allow_stdin=False):
         self.silent = silent
@@ -154,16 +162,10 @@ class ProsaicKernel(Kernel):
                 query = AnthropicQuery(EnvClient(), VALIDATION_PROMPT.format(CODE=code), raw=True)
                 if " Yes" == query.sync(model="claude-v1", max_tokens_to_sample=1):
                     self.update_output(await self.exec_tool(code))
+                elif self.approve_interactively(code):
+                    self.update_output(await self.exec_tool(code))
                 else:
-                    #TODO really this should go in kernel.js
-                    self.send_response(self.iopub_socket, 'display_data', content_for_js('''
-                        console.warn("TODO inject fancy approve/reject <form>")
-                    '''))
-                    #TODO display the code in question in isolation
-                    if self.raw_input("Approve execution? [Y/n] ").strip().lower()[0] == "y":
-                        self.update_output(await self.exec_tool(code))
-                    else:
-                        self.update_output("Rejected.")
+                    self.update_output("Rejected.")
 
             elif code[0] == '!' or code[0] == '<':
                 return self._do_command(code)

@@ -106,9 +106,12 @@ def display_data_for_js(filename):
     with open(filename, 'rb') as f:
         html_data = f.read()
     _unlink_if_temporary(filename)
+    return content_for_js(html_data.decode('utf-8'))
+
+def content_for_js(js_data):
     content = {
         'data': {
-            'text/javascript': html_data.decode('utf-8'),
+            'application/javascript': js_data,
         },
         'metadata': {}
     }
@@ -178,6 +181,7 @@ def _filename_and_display_id(line):
 
 
 # Maps content prefixes to function that display its contents.
+# TODO this should be based on model output html instead
 CONTENT_DATA_PREFIXES = {
     _TEXT_SAVED_IMAGE: {
         'display_cmd': 'display',

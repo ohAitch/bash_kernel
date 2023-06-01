@@ -10,13 +10,13 @@ __version__ = '0.0.1'
 
 version_pat = re.compile(r'version (\d+(\.\d+)+)')
 
-from .display import extract_contents
+from .display import content_for_js, extract_contents
 
 #STUB
 async def make_tool_interface(_connection):
     connection = _connection
     async def tool(code):
-        return f"{connection}: ran {code}"
+        return f"{connection} ran: {code}"
     return tool
 
 VALIDATION_PROMPT = "\n\n" + (Path(__file__).parent / "validation_prompt.md").read_text().strip()
@@ -140,6 +140,7 @@ class ProsaicKernel(Kernel):
     async def do_execute(self, code, silent, store_history=True,
                    user_expressions=None, allow_stdin=False):
         self.silent = silent
+        self._allow_stdin = allow_stdin
         if not code.strip():
             return {'status': 'ok', 'execution_count': self.execution_count,
                     'payload': [], 'user_expressions': {}}
@@ -149,15 +150,20 @@ class ProsaicKernel(Kernel):
                 if store_history:
                      #TODO the mapping to self.execution_count could be less fragile
                     self.chat_log.append(code.strip())
-                #TODO this is kind of like slack
-                if is_approval:= (code[:9] == "!approve "):
-                    code = self.chat_log[int(code[9:])]
                 
-                query = lambda: AnthropicQuery(EnvClient(), VALIDATION_PROMPT.format(CODE=code), raw=True)
-                if is_approval or " Yes" == query().sync(model="claude-v1", max_tokens_to_sample=1):
+                query = AnthropicQuery(EnvClient(), VALIDATION_PROMPT.format(CODE=code), raw=True)
+                if " Yes" == query.sync(model="claude-v1", max_tokens_to_sample=1):
                     self.update_output(await self.exec_tool(code))
                 else:
-                    self.update_output("[…waiting for approval]")
+                    #TODO really this should go in kernel.js
+                    self.send_response(self.iopub_socket, 'display_data', content_for_js('''
+                        console.warn("TODO inject fancy approve/reject <form>")
+                    '''))
+                    #TODO display the code in question in isolation
+                    if self.raw_input("Approve execution? [Y/n] ").strip().lower()[0] == "y":
+                        self.update_output(await self.exec_tool(code))
+                    else:
+                        self.update_output("Rejected.")
 
             elif code[0] == '!' or code[0] == '<':
                 return self._do_command(code)

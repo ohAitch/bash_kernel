@@ -125,9 +125,10 @@ class ProsaicKernel(Kernel):
             self._known_display_ids.add(display_id)
         self.send_response(self.iopub_socket, msg_type, content)
 
-    def update_output(self, text):
+    def update_output(self, text, clear=True):
         stdout_text = {'name': 'stdout', 'text': text}
-        self.send_response(self.iopub_socket, 'clear_output', {'wait': True})
+        if clear:
+            self.send_response(self.iopub_socket, 'clear_output', {'wait': True})
         self.send_response(self.iopub_socket, 'stream', stdout_text)
         #MAYFIX handle images html etc
         #self.process_output(completion)
@@ -144,7 +145,7 @@ class ProsaicKernel(Kernel):
 
             CodeCell.prototype._handle_input_request = function(msg) {
                 this.output_area.append_raw_input(msg); // original code
-                
+
                 if (/^\s*<form data-prosaic-override>/.test(msg.content.prompt)){
                     let container = this.output_area.element.find('.raw_input_container')
                     container.html(container.text())
@@ -181,7 +182,8 @@ class ProsaicKernel(Kernel):
                 if " Yes" == query.sync(model="claude-v1", max_tokens_to_sample=1):
                     self.update_output(await self.exec_tool(code))
                 elif self.approve_interactively(code):
-                    self.update_output(await self.exec_tool(code))
+                    self.update_output("Approved!\n")
+                    self.update_output(await self.exec_tool(code), clear=False)
                 else:
                     self.update_output("Rejected.")
 

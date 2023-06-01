@@ -140,10 +140,28 @@ class ProsaicKernel(Kernel):
     def approve_interactively(self, code):
         #TODO really this should go in kernel.js
         self.send_response(self.iopub_socket, 'display_data', content_for_js('''
-            console.warn("TODO inject fancy approve/reject <form>")
+            const CodeCell = window.IPython.CodeCell;
+
+            CodeCell.prototype._handle_input_request = function(msg) {
+                this.output_area.append_raw_input(msg); // original code
+                
+                if (/^\s*<form data-prosaic-override>/.test(msg.content.prompt)){
+                    let container = this.output_area.element.find('.raw_input_container')
+                    container.html(container.text())
+                    container.find('form').submit(() => {
+                        IPython.notebook.kernel.send_input_reply(document.activeElement.name);
+                        return false
+                    })
+                }
+            }
         '''))
         #TODO display the code in question in isolation
-        return "y" == self.raw_input("Approve execution? [Y/n] ").strip().lower()[0]
+        return "approved" == self.raw_input('''
+            <form data-prosaic-override>
+                <input type="submit" name="approved" value="Approve">
+                <input type="submit" name="rejected" value="Reject">
+            </form>
+        ''')
                     
     async def do_execute(self, code, silent, store_history=True,
                    user_expressions=None, allow_stdin=False):

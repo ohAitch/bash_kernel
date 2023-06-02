@@ -1,5 +1,5 @@
 """A ML kernel for Jupyter"""
-from metakernel import MetaKernel, ExceptionWrapper
+from metakernel import MetaKernel, ExceptionWrapper, Magic
 import anthropic
 
 import os, sys
@@ -49,6 +49,27 @@ class AnthropicQuery:
     def prompt_and_answer(self):
         if self.answer is not None: return self.query_prompt + self.answer
 
+# Copyright (c) Metakernel Development Team.
+# Distributed under the terms of the Modified BSD License.
+
+from metakernel import Magic
+
+class ValidationAllowMagic(Magic):
+    def line_prosaic_validation_allow(self):
+        """
+        %prosaic_validation_allow - enable code execution tool
+
+        This line magic is used to enable executing model code.
+
+        Examples:
+            %prosaic_validation_allow
+        """
+
+        self.retval = self.kernel.prosaic_validation_allow()
+
+    def post_process(self, retval):
+        return self.retval
+
 class MetaKernelProsaic(MetaKernel):
     implementation = 'Prosaic Kernel'
     implementation_version = __version__
@@ -94,6 +115,8 @@ class MetaKernelProsaic(MetaKernel):
         self.chat_log = [""]
         self.prosaic_container = prosaic_container
         self._exec_tool = None
+        self._validation_enabled = False
+        self.register_magics(ValidationAllowMagic)
 
     async def exec_tool(self, code):
         if not self._exec_tool:
@@ -106,11 +129,16 @@ class MetaKernelProsaic(MetaKernel):
         self._store_history = store_history
         return super().do_execute(code, silent, store_history, user_expressions, allow_stdin)
 
+    def prosaic_validation_allow(self):
+        r = "Enabled!" + " (Was already enabled.)" * self._validation_enabled
+        self._validation_enabled = True
+        return r
+    
     async def do_execute_direct(self, code):
         if not code.strip():
             return None
         try:
-            if os.environ.get("PROSAIC_VALIDATION_MODE"):
+            if self._validation_enabled:
                 if self._store_history:
                      #TODO the mapping to self.execution_count could be less fragile
                     self.chat_log.append(code.strip())
@@ -180,6 +208,7 @@ class MetaKernelProsaic(MetaKernel):
                 container.html(container.text())
                 container.find('form').submit(() => {
                     IPython.notebook.kernel.send_input_reply(document.activeElement.name);
+                    container.remove()
                     return false
                 })
             }

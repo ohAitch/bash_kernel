@@ -1,17 +1,12 @@
 """A ML kernel for Jupyter"""
-import logging
 from metakernel import MetaKernel, ExceptionWrapper
 import anthropic
 
-import os, re, sys
+import os, sys
 from typing import Optional
 import traceback
 
 __version__ = '0.0.2'
-
-version_pat = re.compile(r'version (\d+(\.\d+)+)')
-
-from .display import extract_contents
 
 class EnvClient(anthropic.Client):
     def __init__(self) -> None:
@@ -41,7 +36,6 @@ class AnthropicQuery:
     def prompt_and_answer(self):
         if self.answer is not None: return self.query_prompt + self.answer
 
-
 class MetaKernelProsaic(MetaKernel):
     implementation = 'Prosaic Kernel'
     implementation_version = __version__
@@ -59,7 +53,7 @@ class MetaKernelProsaic(MetaKernel):
     @property
     def kernel_json(self):
         if not os.environ.get("ANTHROPIC_API_KEY"):
-            #REVIEW with %env magics, this could also be loaded at runtime?
+            #REVIEW with %set magic, this could also be loaded at runtime?
             print("ANTHROPIC_API_KEY unset or blank. Please set it to your API key.")
             sys.exit(1)
         return {
@@ -86,58 +80,6 @@ class MetaKernelProsaic(MetaKernel):
         self._known_display_ids = set()
         self.chat_log = []
 
-
-    def process_output(self, output):
-        if not self.silent:
-            if isinstance(output, Exception):
-                message = {'name': 'stderr', 'text': str(output)}
-                self.send_response(self.iopub_socket, 'stream', message)
-                return
-                
-            plain_output, rich_contents = extract_contents(output)
-
-            # Send standard output
-            if plain_output:
-                stream_content = {'name': 'stdout', 'text': plain_output}
-                self.send_response(self.iopub_socket, 'stream', stream_content)
-
-            # Send rich contents, if any:
-            for content in rich_contents:
-                if isinstance(content, Exception):
-                    message = {'name': 'stderr', 'text': str(e)}
-                    self.send_response(self.iopub_socket, 'stream', message)
-                else:
-                    if 'transient' in content and 'display_id' in content['transient']:
-                        self._send_content_to_display_id(content)
-                    else:
-                        self.send_response(self.iopub_socket, 'display_data', content)
-
-    def _send_content_to_display_id(self, content):
-        """If display_id is not known, use "display_data", otherwise "update_display_data"."""
-        # Notice this is imperfect, because when re-running the same cell, the output cell
-        # is destroyed and the div element (the html tag) with the display_id no longer exists. But the
-        # `update_display_data` function has no way of knowing this, and thinks that the
-        # display_id still exists and will try, and fail to update it (as opposed to re-create
-        # the div with the display_id).
-        #
-        # The solution is to have the user always to generate a new display_id for a cell: this
-        # way `update_display_data` will not have seen the display_id when the cell is re-run and
-        # correctly creates the new div element.
-        display_id = content['transient']['display_id']
-        if display_id in self._known_display_ids:
-            msg_type = 'update_display_data'
-        else:
-            msg_type = 'display_data'
-            self._known_display_ids.add(display_id)
-        self.send_response(self.iopub_socket, msg_type, content)
-
-    def update_output(self, text):
-        stdout_text = {'name': 'stdout', 'text': text}
-        self.send_response(self.iopub_socket, 'clear_output', {'wait': True})
-        self.send_response(self.iopub_socket, 'stream', stdout_text)
-        #MAYFIX handle images html etc
-        #self.process_output(completion)
-
     def do_execute(self, code, silent, store_history=True,
                    user_expressions=None, allow_stdin=False):
         self.silent = silent
@@ -153,7 +95,8 @@ class MetaKernelProsaic(MetaKernel):
 
             query = AnthropicQuery(code.strip(), prefix="".join(self.chat_log))
             for message in query.stream():
-                self.update_output(message)
+                self.clear_output(wait=True)
+                self.Print(message)
             if query.prompt_and_answer():
                 self.chat_log.append(query.prompt_and_answer())
         except KeyboardInterrupt:
@@ -172,7 +115,7 @@ class MetaKernelProsaic(MetaKernel):
     def _do_command(self,code):
         match code.splitlines()[0]:
             case "!log":
-                self.process_output("".join(self.chat_log))
+                self.Print("".join(self.chat_log))
                 if len(code.splitlines()[1:]):
                     raise Exception("!log takes no input")
                 return None
@@ -183,10 +126,10 @@ class MetaKernelProsaic(MetaKernel):
                     prompt = "\n\n" + "\n".join(code.splitlines()[1:]).strip()
                     self.chat_log.append(prompt)
                 lines = (self.chat_log or [""])[0].count('\n')
-                self.process_output(f"Reset! Prompt is {lines} lines.")
+                self.Print(f"Reset! Prompt is {lines} lines.")
                 return None
             case "!nb" | "<!--":
-                self.process_output("[Ignoring...]")
+                self.Print("[Ignoring...]")
                 return None
             case _:
                 raise Exception(f"Unknown command {code.splitlines()[0]}")

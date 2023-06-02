@@ -3,19 +3,32 @@ from metakernel import MetaKernel, ExceptionWrapper
 import anthropic
 
 import os, sys
+from pathlib import Path
 from typing import Optional
 import traceback
 
 __version__ = '0.0.2'
+
+#STUB
+async def make_tool_interface(_connection):
+    connection = _connection
+    async def tool(code):
+        return f"{connection} ran: {code}"
+    return tool
+
+VALIDATION_PROMPT = "\n\n" + (Path(__file__).parent / "validation_prompt.md").read_text().strip()
 
 class EnvClient(anthropic.Client):
     def __init__(self) -> None:
         super().__init__(os.environ["ANTHROPIC_API_KEY"])
 
 class AnthropicQuery:
-    def __init__(self, query: str, prefix="", client: Optional[anthropic.Client] = None) -> None:
+    def __init__(self, query: str, prefix="", raw=False, client: Optional[anthropic.Client] = None) -> None:
         self.client = client or EnvClient()
-        self.query_prompt = f"{anthropic.HUMAN_PROMPT} {query}{anthropic.AI_PROMPT}"
+        if raw:
+            self.query_prompt = query
+        else:
+            self.query_prompt = f"{anthropic.HUMAN_PROMPT} {query}{anthropic.AI_PROMPT}"
         self.answer = None
         self.api_args = dict(
             prompt = prefix + self.query_prompt,
@@ -25,11 +38,11 @@ class AnthropicQuery:
         )
     
     def sync(self, **kwargs):
-        self.answer = self.client.completion(**self.api_args, **kwargs)['completion']
+        self.answer = self.client.completion(**{**self.api_args, **kwargs})['completion']
         return self.answer
 
     def stream(self, **kwargs):
-        for message in self.client.completion_stream(**self.api_args, **kwargs):
+        for message in self.client.completion_stream(**{**self.api_args, **kwargs}):
             self.answer = message['completion']
             yield self.answer
     
@@ -75,36 +88,59 @@ class MetaKernelProsaic(MetaKernel):
     #TODO really this is a tweak to self.parser - kind of a lot of legitimate one-line queries end with '?'
     help_suffix = "DISABLED?DISABLED"
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, prosaic_container="STUB", **kwargs):
         super().__init__(*args, **kwargs)
         self._known_display_ids = set()
-        self.chat_log = []
+        self.chat_log = [""]
+        self.prosaic_container = prosaic_container
+        self._exec_tool = None
+
+    async def exec_tool(self, code):
+        if not self._exec_tool:
+            self._exec_tool = await make_tool_interface(self.prosaic_container)
+        return await self._exec_tool(code)
 
     def do_execute(self, code, silent, store_history=True,
                    user_expressions=None, allow_stdin=False):
         self.silent = silent
+        self._store_history = store_history
         return super().do_execute(code, silent, store_history, user_expressions, allow_stdin)
 
     async def do_execute_direct(self, code):
         if not code.strip():
             return None
         try:
-            if code[0] == '!' or code[0] == '<':
-                return self._do_command(code)
+            if os.environ.get("PROSAIC_VALIDATION_MODE"):
+                if self._store_history:
+                     #TODO the mapping to self.execution_count could be less fragile
+                    self.chat_log.append(code.strip())
+                
+                query = AnthropicQuery(VALIDATION_PROMPT.format(CODE=code), raw=True)
+                if " Yes" == query.sync(model="claude-v1", max_tokens_to_sample=1):
+                    self.Print(await self.exec_tool(code))
+                elif self.approve_interactively(code):
+                    self.Print("Approved!")
+                    self.Print(await self.exec_tool(code))
+                else:
+                    self.Print("Rejected.")
 
-            query = AnthropicQuery(code.strip(), prefix="".join(self.chat_log))
-            for message in query.stream():
-                self.clear_output(wait=True)
-                self.Print(message)
-            if query.prompt_and_answer():
-                self.chat_log.append(query.prompt_and_answer())
+            elif code[0] == '!' or code[0] == '<':
+                return self._do_command(code)
+            else:
+                query = AnthropicQuery(code.strip(), prefix="".join(self.chat_log))
+                for message in query.stream():
+                    self.clear_output(wait=True)
+                    self.Print(message)
+                if query.prompt_and_answer():
+                    self.chat_log.append(query.prompt_and_answer())
         except KeyboardInterrupt:
             self.kernel_resp =  {'status': 'abort', 'execution_count': self.execution_count}
         except Exception as error:
             return self.wrap_exception(error,*sys.exc_info())
         return None
 
-    def wrap_exception(error, ex_type, ex, tb):
+
+    def wrap_exception(self, error, ex_type, ex, tb):
         # see metakernel.magics.python_magic.exec_then_eval
         line1 = ["Traceback (most recent call last):"]
         line2 = ["%s: %s" % (ex.__class__.__name__, str(ex))]
@@ -119,16 +155,41 @@ class MetaKernelProsaic(MetaKernel):
                     raise Exception("!log takes no input")
                 return None
             case "!reset":
-                self.chat_log = []
+                self.chat_log = [""]
                 if len(code.splitlines()[1:]):
                     #TODO split on anthropic.HUMAN_PROMPT
                     prompt = "\n\n" + "\n".join(code.splitlines()[1:]).strip()
-                    self.chat_log.append(prompt)
-                lines = (self.chat_log or [""])[0].count('\n')
-                self.Print(f"Reset! Prompt is {lines} lines.")
+                    self.chat_log[0]=prompt
+                lines = self.chat_log[0].count('\n')
+                self.process_output(f"Reset! Prompt is {lines} lines.")
                 return None
             case "!nb" | "<!--":
                 self.Print("[Ignoring...]")
                 return None
             case _:
                 raise Exception(f"Unknown command {code.splitlines()[0]}")
+
+    kernel_javascript = '''
+        const CodeCell = window.IPython.CodeCell;
+
+        CodeCell.prototype._handle_input_request = function(msg) {
+            this.output_area.append_raw_input(msg); // original code
+
+            if (/^\s*<form data-prosaic-override>/.test(msg.content.prompt)){
+                let container = this.output_area.element.find('.raw_input_container')
+                container.html(container.text())
+                container.find('form').submit(() => {
+                    IPython.notebook.kernel.send_input_reply(document.activeElement.name);
+                    return false
+                })
+            }
+        }
+    '''
+    def approve_interactively(self, code):
+        #TODO display the code in question in isolation
+        return "approved" == self.raw_input('''
+            <form data-prosaic-override>
+                <input type="submit" name="approved" value="Approve">
+                <input type="submit" name="rejected" value="Reject">
+            </form>
+        ''')

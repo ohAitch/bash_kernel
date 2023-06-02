@@ -1,3 +1,3 @@
-from ipykernel.kernelapp import IPKernelApp
-from .kernel import ProsaicKernel
-IPKernelApp.launch_instance(kernel_class=ProsaicKernel)
+from .kernel import MetaKernelProsaic
+
+MetaKernelProsaic.run_as_main()

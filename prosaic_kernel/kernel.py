@@ -1,11 +1,13 @@
-from ipykernel.kernelbase import Kernel
-
+"""A ML kernel for Jupyter"""
+import logging
+from metakernel import MetaKernel, ExceptionWrapper
 import anthropic
 
-import os
-import re
+import os, re, sys
+from typing import Optional
+import traceback
 
-__version__ = '0.0.1'
+__version__ = '0.0.2'
 
 version_pat = re.compile(r'version (\d+(\.\d+)+)')
 
@@ -16,8 +18,8 @@ class EnvClient(anthropic.Client):
         super().__init__(os.environ["ANTHROPIC_API_KEY"])
 
 class AnthropicQuery:
-    def __init__(self, client: anthropic.Client, query: str, prefix="") -> None:
-        self.client = client
+    def __init__(self, query: str, prefix="", client: Optional[anthropic.Client] = None) -> None:
+        self.client = client or EnvClient()
         self.query_prompt = f"{anthropic.HUMAN_PROMPT} {query}{anthropic.AI_PROMPT}"
         self.answer = None
         self.api_args = dict(
@@ -39,32 +41,51 @@ class AnthropicQuery:
     def prompt_and_answer(self):
         if self.answer is not None: return self.query_prompt + self.answer
 
-class ProsaicKernel(Kernel):
-    implementation = 'prosaic_kernel'
+
+class MetaKernelProsaic(MetaKernel):
+    implementation = 'Prosaic Kernel'
     implementation_version = __version__
+    
+    language = 'markdown'
+    language_version = anthropic.ANTHROPIC_CLIENT_VERSION
 
-    @property
-    def language_version(self):
-        m = version_pat.search(self.banner)
-        return m.group(1)
-
-    _banner = None
-
-    @property
-    def banner(self):
-        if self._banner is None:
-            self._banner = "v0" # check_output(['bash', '--version']).decode('utf-8')
-        return self._banner
-
+    banner = "Prosaic kernel - ask and we shall answer" #REVIEW
     language_info = {'name': 'prosaic',
                      'codemirror_mode': 'markdown',
                      'mimetype': 'text/x-markdown-prompt',
-                     'file_extension': '.md'}
+                     'file_extension': '.md',
+                     'help_links': MetaKernel.help_links,}
 
-    def __init__(self, **kwargs):
-        Kernel.__init__(self, **kwargs)
+    @property
+    def kernel_json(self):
+        if not os.environ.get("ANTHROPIC_API_KEY"):
+            #REVIEW with %env magics, this could also be loaded at runtime?
+            print("ANTHROPIC_API_KEY unset or blank. Please set it to your API key.")
+            sys.exit(1)
+        return {
+            "argv":[sys.executable,"-m","prosaic_kernel", "-f", "{connection_file}"],
+            "display_name":"Prosaic",
+            "language":"markdown",
+            "codemirror_mode":"markdown",
+            'name': 'prosaic',
+            'env': {
+                "ANTHROPIC_API_KEY": os.environ["ANTHROPIC_API_KEY"],
+            },
+         }
+
+    def get_usage(self):
+        return "Ask a question!"
+
+    #TODO replace _do_command w/ magics
+    magic_prefixes = dict(magic='%', shell='DISABLED!', help='?')
+    #TODO really this is a tweak to self.parser - kind of a lot of legitimate one-line queries end with '?'
+    help_suffix = "DISABLED?DISABLED"
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
         self._known_display_ids = set()
         self.chat_log = []
+
 
     def process_output(self, output):
         if not self.silent:
@@ -117,50 +138,44 @@ class ProsaicKernel(Kernel):
         #MAYFIX handle images html etc
         #self.process_output(completion)
 
-    async def do_execute(self, code, silent, store_history=True,
+    def do_execute(self, code, silent, store_history=True,
                    user_expressions=None, allow_stdin=False):
         self.silent = silent
-        if not code.strip():
-            return {'status': 'ok', 'execution_count': self.execution_count,
-                    'payload': [], 'user_expressions': {}}
+        return super().do_execute(code, silent, store_history, user_expressions, allow_stdin)
 
+    #TODO async!
+    def do_execute_direct(self, code):
+        if not code.strip():
+            return None
         try:
             if code[0] == '!' or code[0] == '<':
                 return self._do_command(code)
 
-            query = AnthropicQuery(EnvClient(), code.strip(), prefix="".join(self.chat_log))
+            query = AnthropicQuery(code.strip(), prefix="".join(self.chat_log))
             for message in query.stream():
                 self.update_output(message)
-            if store_history and query.prompt_and_answer():
+            if query.prompt_and_answer():
                 self.chat_log.append(query.prompt_and_answer())
         except KeyboardInterrupt:
-            return {'status': 'abort', 'execution_count': self.execution_count}
+            self.kernel_resp =  {'status': 'abort', 'execution_count': self.execution_count}
         except Exception as error:
-            self.process_output(error)
-            error_content = {
-                'ename': '',
-                'evalue': str(error),
-                'traceback': []
-            }
-            self.send_response(self.iopub_socket, 'error', error_content)
+            return self.wrap_exception(error,*sys.exc_info())
+        return None
 
-            error_content['execution_count'] = self.execution_count
-            error_content['status'] = 'error'
-            return error_content
-
-        return {'status': 'ok', 'execution_count': self.execution_count,
-                'payload': [], 'user_expressions': {}}
+    def wrap_exception(error, ex_type, ex, tb):
+        # see metakernel.magics.python_magic.exec_then_eval
+        line1 = ["Traceback (most recent call last):"]
+        line2 = ["%s: %s" % (ex.__class__.__name__, str(ex))]
+        tb_format = line1 + [line.rstrip() for line in traceback.format_tb(tb)[1:]] + line2
+        return ExceptionWrapper(ex_type.__name__, repr(error.args), tb_format)
 
     def _do_command(self,code):
-        status_ok = {'status': 'ok', 'execution_count': self.execution_count,
-                     'payload': [], 'user_expressions': {}}
-        
         match code.splitlines()[0]:
             case "!log":
                 self.process_output("".join(self.chat_log))
                 if len(code.splitlines()[1:]):
                     raise Exception("!log takes no input")
-                return status_ok
+                return None
             case "!reset":
                 self.chat_log = []
                 if len(code.splitlines()[1:]):
@@ -169,19 +184,9 @@ class ProsaicKernel(Kernel):
                     self.chat_log.append(prompt)
                 lines = (self.chat_log or [""])[0].count('\n')
                 self.process_output(f"Reset! Prompt is {lines} lines.")
-                return status_ok
+                return None
             case "!nb" | "<!--":
                 self.process_output("[Ignoring...]")
-                return status_ok
+                return None
             case _:
                 raise Exception(f"Unknown command {code.splitlines()[0]}")
-                
-    def do_complete(self, code, cursor_pos):
-        code = code[:cursor_pos]
-        default = {'matches': [], 'cursor_start': 0,
-                   'cursor_end': cursor_pos, 'metadata': dict(),
-                   'status': 'ok'}
-
-        #There are some interesting things that could be done here with prompt suggestion
-        # but right now, no
-        return default

@@ -1,8 +1,6 @@
-# WIP
+# Prosaic Kernel
 
-Fork of example kernel provided by IPython, to call the anthropic assistant API.
-
-See [README.old.rst](README.old.rst) for context.
+An IPython kernel calling the anthropic assistant API.
 
 ### Demo
 
@@ -10,6 +8,6 @@ See [README.old.rst](README.old.rst) for context.
 API_KEY=$(cat /run/secrets/anthropic_api_key) # or pbpaste or etc
 # venv as desired
 pip install .
-ANTHROPIC_API_KEY="$API_KEY" python -m prosaic_kernel.install --user
+ANTHROPIC_API_KEY="$API_KEY" python -m prosaic_kernel install --user
 jupyter console --kernel prosaic
 ```

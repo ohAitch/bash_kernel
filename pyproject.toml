@@ -8,7 +8,7 @@ authors = [
     {name = "ohAitch", email = "ohAitch@gmail.com"},
 ]
 readme = "README.md"
-dependencies = ["ipykernel", "anthropic"]
+dependencies = ["ipykernel", "anthropic", "metakernel"]
 classifiers = [
     "Framework :: Jupyter",
     "License :: OSI Approved :: BSD License",

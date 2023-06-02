@@ -139,7 +139,11 @@ class ProsaicKernel(Kernel):
         return await self._exec_tool(code)
 
     def approve_interactively(self, code):
-        #TODO really this should go in kernel.js
+        #REVIEW theoretically, this best fits in kernel.js
+        # doing this with metakernel would be somwehat awkward:
+        # - there's a longstanding open PR supporting it
+        # - it could be merged to a fork and vendored in as a .zip in pyproject.toml
+        # - or for that matter, as a git repository link
         self.send_response(self.iopub_socket, 'display_data', content_for_js('''
             const CodeCell = window.IPython.CodeCell;
 

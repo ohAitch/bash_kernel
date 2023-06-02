@@ -8,7 +8,10 @@ authors = [
     {name = "ohAitch", email = "ohAitch@gmail.com"},
 ]
 readme = "README.md"
-dependencies = ["ipykernel", "anthropic", "metakernel"]
+dependencies = [
+    "anthropic ~= 0.2.9", 
+    "metakernel @ git+ssh://git@github.com/ohAitch/metakernel@v0.29.4-awaitable-2",
+]
 classifiers = [
     "Framework :: Jupyter",
     "License :: OSI Approved :: BSD License",

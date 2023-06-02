@@ -85,8 +85,7 @@ class MetaKernelProsaic(MetaKernel):
         self.silent = silent
         return super().do_execute(code, silent, store_history, user_expressions, allow_stdin)
 
-    #TODO async!
-    def do_execute_direct(self, code):
+    async def do_execute_direct(self, code):
         if not code.strip():
             return None
         try:

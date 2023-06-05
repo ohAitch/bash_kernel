@@ -68,6 +68,14 @@ class ValidationAllowMagic(Magic):
     def post_process(self, retval):
         return self.retval
 
+#TODO multiple code blocks, be less brittle
+def code_block(response):
+    in_code = False
+    for line in response.splitlines():
+        if   line == "```python":  in_code = True
+        elif line == "```":        return
+        elif in_code:              yield line
+
 class MetaKernelProsaic(MetaKernel):
     implementation = 'Prosaic Kernel'
     implementation_version = __version__
@@ -137,11 +145,15 @@ class MetaKernelProsaic(MetaKernel):
             return None
         try:
             if self._validation_enabled:
+                code = "\n".join(code_block(code))
+                if not code.strip():
+                    return None
                 query = AnthropicQuery(VALIDATION_PROMPT.format(CODE=code), raw=True)
                 if " Yes" == query.sync(model="claude-v1", max_tokens_to_sample=1):
                     self.Print(await self.exec_tool(code))
                 elif self.approve_interactively(code):
                     self.Print("Approved!")
+                    #REVIEW log code contents maybe
                     self.Print(await self.exec_tool(code))
                 else:
                     self.Print("Rejected.")
@@ -153,6 +165,7 @@ class MetaKernelProsaic(MetaKernel):
                 for message in query.stream():
                     self.clear_output(wait=True)
                     self.Print(message)
+                    #TODO format model response as markdown
                 if query.prompt_and_answer():
                     self.chat_log.append(query.prompt_and_answer())
         except KeyboardInterrupt:
@@ -191,6 +204,7 @@ class MetaKernelProsaic(MetaKernel):
             case _:
                 raise Exception(f"Unknown command {code.splitlines()[0]}")
 
+    #TODO gracefully handle KeyboardInterrupt
     kernel_javascript = '''
         const CodeCell = window.IPython.CodeCell;
 

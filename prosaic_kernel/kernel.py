@@ -166,6 +166,7 @@ class MetaKernelProsaic(MetaKernel):
                 self.clear_output(wait=True)
                 self.Print(message)
                 #TODO format model response as markdown
+                # (or at least bump `IPython.OutputArea.auto_scroll_threshold` js-side)
             
             if query.prompt_and_answer():
                 self.chat_log.append(query.prompt_and_answer())

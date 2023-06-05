@@ -1,4 +1,5 @@
 """A ML kernel for Jupyter"""
+import html
 from metakernel import MetaKernel, ExceptionWrapper, Magic
 import anthropic
 
@@ -48,9 +49,6 @@ class AnthropicQuery:
     
     def prompt_and_answer(self):
         if self.answer is not None: return self.query_prompt + self.answer
-
-# Copyright (c) Metakernel Development Team.
-# Distributed under the terms of the Modified BSD License.
 
 from metakernel import Magic
 
@@ -210,10 +208,11 @@ class MetaKernelProsaic(MetaKernel):
             }
         }
     '''
+    #REVIEW style me?
     def approve_interactively(self, code):
-        #TODO display the code in question in isolation
-        return "approved" == self.raw_input('''
+        return "approved" == self.raw_input(f'''
             <form data-prosaic-override>
+                <pre>{html.escape(code)}</pre>
                 <input type="submit" name="approved" value="Approve">
                 <input type="submit" name="rejected" value="Reject">
             </form>

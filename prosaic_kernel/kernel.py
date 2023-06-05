@@ -115,6 +115,11 @@ class MetaKernelProsaic(MetaKernel):
     #TODO really this is a tweak to self.parser - kind of a lot of legitimate one-line queries end with '?'
     help_suffix = "DISABLED?DISABLED"
 
+    def prosaic_validation_allow(self):
+        r = "Enabled!" + " (Was already enabled.)" * self._validation_enabled
+        self._validation_enabled = True
+        return r
+    
     def __init__(self, *args, prosaic_container="STUB", **kwargs):
         super().__init__(*args, **kwargs)
         self._known_display_ids = set()
@@ -129,51 +134,50 @@ class MetaKernelProsaic(MetaKernel):
             self._exec_tool = await make_tool_interface(self.prosaic_container)
         return await self._exec_tool(code)
 
+    async def try_exec_code_blocks(self, response):
+        code = "\n".join(code_block(response))
+        if not code.strip():
+            return None
+        self.Print("\n---\n" )
+        query = AnthropicQuery(VALIDATION_PROMPT.format(CODE=code), raw=True)
+        if " Yes" == query.sync(model="claude-v1", max_tokens_to_sample=1):
+            self.Print(await self.exec_tool(code))
+        elif self.approve_interactively(code):
+            self.Print("Approved!")
+            #REVIEW log code contents maybe
+            self.Print(await self.exec_tool(code))
+        else:
+            self.Print("Rejected.")
+
     def do_execute(self, code, silent, store_history=True,
                    user_expressions=None, allow_stdin=False):
         self.silent = silent
         self._store_history = store_history
         return super().do_execute(code, silent, store_history, user_expressions, allow_stdin)
 
-    def prosaic_validation_allow(self):
-        r = "Enabled!" + " (Was already enabled.)" * self._validation_enabled
-        self._validation_enabled = True
-        return r
-    
     async def do_execute_direct(self, code):
         if not code.strip():
             return None
         try:
-            if self._validation_enabled:
-                code = "\n".join(code_block(code))
-                if not code.strip():
-                    return None
-                query = AnthropicQuery(VALIDATION_PROMPT.format(CODE=code), raw=True)
-                if " Yes" == query.sync(model="claude-v1", max_tokens_to_sample=1):
-                    self.Print(await self.exec_tool(code))
-                elif self.approve_interactively(code):
-                    self.Print("Approved!")
-                    #REVIEW log code contents maybe
-                    self.Print(await self.exec_tool(code))
-                else:
-                    self.Print("Rejected.")
-
-            elif code[0] == '!' or code[0] == '<':
+            if code[0] == '!' or code[0] == '<':
                 return self._do_command(code)
-            else:
-                query = AnthropicQuery(code.strip(), prefix="".join(self.chat_log))
-                for message in query.stream():
-                    self.clear_output(wait=True)
-                    self.Print(message)
-                    #TODO format model response as markdown
-                if query.prompt_and_answer():
-                    self.chat_log.append(query.prompt_and_answer())
+            query = AnthropicQuery(code.strip(), prefix="".join(self.chat_log))
+            for message in query.stream():
+                self.clear_output(wait=True)
+                self.Print(message)
+                #TODO format model response as markdown
+            
+            if query.prompt_and_answer():
+                self.chat_log.append(query.prompt_and_answer())
+            
+            if self._validation_enabled and query.answer:
+                return await self.try_exec_code_blocks(query.answer)
+
         except KeyboardInterrupt:
             self.kernel_resp =  {'status': 'abort', 'execution_count': self.execution_count}
         except Exception as error:
             return self.wrap_exception(error,*sys.exc_info())
         return None
-
 
     def wrap_exception(self, error, ex_type, ex, tb):
         # see metakernel.magics.python_magic.exec_then_eval
@@ -226,6 +230,7 @@ class MetaKernelProsaic(MetaKernel):
     def approve_interactively(self, code):
         return "approved" == self.raw_input(f'''
             <form data-prosaic-override>
+                <h4>Would you like to run this code?</h4>
                 <pre>{html.escape(code)}</pre>
                 <input type="submit" name="approved" value="Approve">
                 <input type="submit" name="rejected" value="Reject">

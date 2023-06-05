@@ -139,10 +139,6 @@ class MetaKernelProsaic(MetaKernel):
             return None
         try:
             if self._validation_enabled:
-                if self._store_history:
-                     #TODO the mapping to self.execution_count could be less fragile
-                    self.chat_log.append(code.strip())
-                
                 query = AnthropicQuery(VALIDATION_PROMPT.format(CODE=code), raw=True)
                 if " Yes" == query.sync(model="claude-v1", max_tokens_to_sample=1):
                     self.Print(await self.exec_tool(code))

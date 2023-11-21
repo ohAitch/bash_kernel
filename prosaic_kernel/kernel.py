@@ -8,30 +8,30 @@ import traceback
 
 __version__ = '0.0.2'
 
-class EnvClient(anthropic.Client):
+class EnvClient(anthropic.Anthropic):
     def __init__(self) -> None:
-        super().__init__(os.environ["ANTHROPIC_API_KEY"])
+        super().__init__()
 
 class AnthropicQuery:
-    def __init__(self, query: str, prefix="", client: Optional[anthropic.Client] = None) -> None:
+    def __init__(self, query: str, prefix="", client: Optional[anthropic.Anthropic] = None) -> None:
         self.client = client or EnvClient()
         self.query_prompt = f"{anthropic.HUMAN_PROMPT} {query}{anthropic.AI_PROMPT}"
         self.answer = None
         self.api_args = dict(
             prompt = prefix + self.query_prompt,
             stop_sequences=[anthropic.HUMAN_PROMPT],
-            max_tokens_to_sample=500,  #TODO configure max_tokens model etc
-            model="claude-instant-v1",
+            max_tokens_to_sample=800,  #TODO configure max_tokens model etc
+            model="	claude-instant-1",
         )
     
     def sync(self, **kwargs):
-        self.answer = self.client.completion(**self.api_args, **kwargs)['completion']
+        self.answer = self.client.completions.create(**self.api_args, **kwargs).completion
         return self.answer
 
     def stream(self, **kwargs):
-        for message in self.client.completion_stream(**self.api_args, **kwargs):
-            self.answer = message['completion']
-            yield self.answer
+        for message in self.client.completions.create(**self.api_args, **kwargs, stream=True):
+            self.answer += message.completion
+            yield message.completion
     
     def prompt_and_answer(self):
         if self.answer is not None: return self.query_prompt + self.answer
@@ -41,7 +41,7 @@ class MetaKernelProsaic(MetaKernel):
     implementation_version = __version__
     
     language = 'markdown'
-    language_version = anthropic.ANTHROPIC_CLIENT_VERSION
+    language_version = anthropic.__version__
 
     banner = "Prosaic kernel - ask and we shall answer" #REVIEW
     language_info = {'name': 'prosaic',
@@ -95,8 +95,7 @@ class MetaKernelProsaic(MetaKernel):
 
             query = AnthropicQuery(code.strip(), prefix="".join(self.chat_log))
             for message in query.stream():
-                self.clear_output(wait=True)
-                self.Print(message)
+                self.Print(message, end="")
             if query.prompt_and_answer():
                 self.chat_log.append(query.prompt_and_answer())
         except KeyboardInterrupt:

@@ -41,7 +41,7 @@ class MetaKernelProsaic(MetaKernel):
     implementation_version = __version__
     
     language = 'markdown'
-    language_version = anthropic.ANTHROPIC_CLIENT_VERSION
+    language_version = anthropic.__version__
 
     banner = "Prosaic kernel - ask and we shall answer" #REVIEW
     language_info = {'name': 'prosaic',

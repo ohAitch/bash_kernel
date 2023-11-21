@@ -30,8 +30,8 @@ class AnthropicQuery:
 
     def stream(self, **kwargs):
         for message in self.client.completions.create(**self.api_args, **kwargs, stream=True):
-            self.answer = message.completion
-            yield self.answer
+            self.answer += message.completion
+            yield message.completion
     
     def prompt_and_answer(self):
         if self.answer is not None: return self.query_prompt + self.answer
